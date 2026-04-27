@@ -1,0 +1,22 @@
+Evaluating: Symmetric collaborative analysis workflow that orchestrates Claude and Codex into parallel independent work from an identical user-approved prompt, then merges their findings and negotiates disagreements over up to 7 rounds. Both agents receive identical input; refinement happens through the user, never via Claude-authored summaries. Use when the user invokes /duet or asks for parallel collaborative analysis with Codex.
+Results: 10/20 passed
+  [FAIL] rate=0/3 expected=True: /duet compare cursor vs offset pagination for our REST API
+  [FAIL] rate=0/3 expected=True: /duet
+  [FAIL] rate=0/3 expected=True: Run a duet on the auth refactor decision
+  [FAIL] rate=0/3 expected=True: Have Claude and Codex both analyze our caching strategy independently 
+  [FAIL] rate=0/3 expected=True: Get a second independent take from Codex on this migration approach so
+  [FAIL] rate=0/3 expected=True: I want parallel collaborative analysis with Codex on whether to use po
+  [FAIL] rate=0/3 expected=True: Side-by-side analysis with Codex on which API style is better, REST or
+  [FAIL] rate=0/3 expected=True: Run both you and Codex on this design question in parallel and merge w
+  [FAIL] rate=0/3 expected=True: Symmetric analysis with Codex: both of you weigh in independently on o
+  [FAIL] rate=0/3 expected=True: Have Claude and Codex independently review the postgres-vs-mysql trade
+  [PASS] rate=0/3 expected=False: Write a plan for the auth migration and have Codex critique it adversa
+  [PASS] rate=0/3 expected=False: Have Codex review my proposed plan adversarially and we'll iterate
+  [PASS] rate=0/3 expected=False: Ask Codex to fix this null pointer bug in the user service
+  [PASS] rate=0/3 expected=False: Use Codex to write unit tests for this module
+  [PASS] rate=0/3 expected=False: Implement a binary tree in Python with insertion and search methods
+  [PASS] rate=0/3 expected=False: Analyze the parallel processing logic in worker.go for race conditions
+  [PASS] rate=0/3 expected=False: Refactor this function for clarity and add docstrings
+  [PASS] rate=0/3 expected=False: Compare the two implementations of the rate limiter in the file and te
+  [PASS] rate=0/3 expected=False: Send this README to Codex for a quick proofread pass
+  [PASS] rate=0/3 expected=False: How do I read both files and merge them in bash, second take aside

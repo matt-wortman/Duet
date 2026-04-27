@@ -1,0 +1,20 @@
+## AGREED
+- **Offset ergonomics**: **Offset pagination is simpler for clients and humans.** / **Client and tooling ergonomics.**
+- **Concurrent writes**: **Cursor pagination is more stable under changing data.** / **Correctness under concurrent writes.**
+- **Large depths**: **Offset pagination gets slower at large depths.** / **Server-side performance at depth.**
+- **Ordering guarantees**: **Cursor pagination requires stricter ordering guarantees.** / **Stable-sort key requirement and tie-breaking.**
+- **Random access**: **Offset pagination is better when random access matters.** / **For human-facing list UIs with random-access expectations (search results, admin tables), offset is the more familiar shape.**
+- **High-volume APIs**: **Cursor pagination is better for public, high-volume, mutable APIs.** / **Cursor-based pagination, for any API expected to scale or to be consumed programmatically.**
+- **Default recommendation**: **Use cursor-based pagination as the default for a modern REST API, especially if the data changes frequently or the dataset may grow large.** / **Otherwise, default to cursor.**
+- **Offset exception**: **Use offset-based pagination only for smaller, mostly static collections or UIs that specifically need page numbers, total counts, and random page access.** / **If the API is exclusively human-facing with stable, slow-changing data (e.g., a documentation index, a small admin UI over a low-write table), offset is acceptable and simpler.**
+
+## DISAGREED
+
+## SINGLE-SOURCE
+- **Cursor opacity** (from other_report): **Cursor opacity and API evolution.**
+  - Your view: accept — Opaque cursor tokens are a real API-evolution benefit that my report only mentioned as a design requirement, not as a benefit.
+- **Operational observability** (from other_report): **Operational observability and abuse mitigation.**
+  - Your view: accept — The cacheability, debugging, and deep-offset abuse points are valid operational tradeoffs not covered in my report.
+
+Codex session ID: 019dcfef-8a52-7162-bccc-6603ce14fe35
+Resume in Codex: codex resume 019dcfef-8a52-7162-bccc-6603ce14fe35

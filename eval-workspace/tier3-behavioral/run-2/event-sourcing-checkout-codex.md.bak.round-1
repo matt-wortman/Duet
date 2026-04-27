@@ -1,0 +1,182 @@
+# Duet (Codex-anchored): Event sourcing for checkout service
+
+**Outcome**: (in progress)
+**Companion file**: `event-sourcing-checkout-claude.md`
+
+---
+
+## Phase 1: Approved Prompt
+
+Should we adopt event sourcing for our checkout service? We process ~10K orders/day, currently use a transactional MySQL system with audit logs, and the team has no prior event sourcing experience. Cover: scaling fit, ops burden, team learning curve, migration risk.
+
+<details>
+<summary>Q&A transcript (not seen by agents)</summary>
+
+(Phase 1 prompt iteration skipped — prompt was pre-approved by the orchestrating evaluator for the smoke test.)
+
+</details>
+
+---
+
+## Phase 2: Codex's Report
+
+**Recommendation**
+
+1. **Do not adopt event sourcing as the primary persistence model for checkout right now.**  
+   Given ~10K orders/day, an existing transactional MySQL system, audit logs, and no team experience, the expected value is low relative to the migration and operational risk.
+
+2. **Keep MySQL as the checkout source of truth and improve targeted event/audit capabilities instead.**  
+   A safer path is transactional writes plus an outbox/event stream for downstream consumers, stronger audit metadata, and selective immutable history where needed.
+
+3. **Revisit event sourcing only if clear product or regulatory requirements emerge.**  
+   Examples: reconstructing exact historical checkout state, complex temporal workflows, replay-based correction, multi-system reconciliation, or business logic that genuinely benefits from event replay.
+
+**Findings**
+
+1. **Scaling Fit**
+
+   1.1. `10K orders/day` is not a scale argument for event sourcing.  
+   That is roughly `7 orders/minute` on average, with peak traffic likely still well within what transactional MySQL can handle if schema, indexes, connection pooling, and lock behavior are healthy.
+
+   1.2. Event sourcing does not automatically improve write scalability.  
+   It changes the write model to append-only events, but checkout still needs consistency around inventory, payment intent, order creation, idempotency, fraud checks, and fulfillment handoff.
+
+   1.3. Read scaling usually becomes more complicated.  
+   Event-sourced systems commonly need projections/read models. That can help at very high scale or with many specialized views, but it introduces projection lag, replay behavior, rebuild procedures, and consistency questions.
+
+   1.4. For this service, scaling pressure is probably better handled with conventional techniques:  
+   MySQL tuning, better indexes, idempotency keys, async side effects, an outbox table, queue-based downstream processing, and read replicas where needed.
+
+2. **Operations Burden**
+
+   2.1. Event sourcing adds new production failure modes.  
+   You need to manage event schema evolution, replay safety, projection rebuilds, poisoned events, duplicate processing, event ordering, snapshotting, stream compaction policy, and operational tooling for support/debugging.
+
+   2.2. Checkout is a high-risk place to introduce unfamiliar persistence semantics.  
+   Bugs can become payment, fulfillment, refund, tax, inventory, or customer support incidents.
+
+   2.3. Auditability improves only if the implementation is disciplined.  
+   Event sourcing can provide excellent audit trails, but a poorly designed event model can be harder to interpret than explicit audit logs tied to transactional records.
+
+   2.4. Support tooling becomes mandatory, not optional.  
+   Operators need to answer: “What happened to this order?”, “Why is this projection wrong?”, “Can this event be corrected?”, “Can we replay safely?”, and “Which downstream systems observed which state?”
+
+3. **Team Learning Curve**
+
+   3.1. No prior event sourcing experience is a major risk signal.  
+   The hard parts are not syntax or library choice; they are event modeling, versioning, transactional boundaries, idempotency, projections, replay discipline, and operational recovery.
+
+   3.2. Checkout domain events are easy to model poorly.  
+   Events should represent business facts, not CRUD changes. For example, `PaymentAuthorized` is useful; `OrderStatusUpdated` is often too vague.
+
+   3.3. Debugging becomes conceptually harder before it becomes easier.  
+   Engineers must reason from event history plus projection code, rather than reading current rows in MySQL.
+
+   3.4. The learning curve is acceptable for a low-risk bounded context or new subsystem, but not as a first adoption directly inside checkout’s core write path.
+
+4. **Migration Risk**
+
+   4.1. Migrating an existing transactional checkout service to event sourcing is high-risk.  
+   You must preserve historical correctness, existing audit semantics, integrations, reporting, payment state, customer service workflows, and operational dashboards.
+
+   4.2. Dual-write and cutover risks are significant.  
+   Running MySQL and an event store in parallel creates consistency risks unless you use a transactional outbox or similar pattern.
+
+   4.3. Backfilling historical events is often lossy.  
+   Existing rows and audit logs may not contain enough information to reconstruct true domain events. You may end up inventing synthetic events that look precise but are not.
+
+   4.4. Rollback is harder than with a conventional refactor.  
+   Once downstream systems depend on event streams and projections, undoing the architecture becomes expensive.
+
+5. **Better Near-Term Alternative**
+
+   5.1. Adopt the **transactional outbox pattern**, not full event sourcing.  
+   Continue writing canonical checkout state to MySQL in a transaction, and write integration events to an outbox table in the same transaction.
+
+   5.2. Publish events asynchronously from the outbox.  
+   This gives downstream systems reliable events without making event replay the source of truth.
+
+   5.3. Strengthen audit logs.  
+   Ensure audit records include actor, reason, correlation/request ID, previous and new values where appropriate, payment/order identifiers, timestamps, and immutable append-only behavior.
+
+   5.4. Use domain events for integration boundaries.  
+   Good candidates: `OrderPlaced`, `PaymentAuthorized`, `PaymentFailed`, `OrderCancelled`, `RefundRequested`, `RefundCompleted`, `FulfillmentRequested`.
+
+6. **When Event Sourcing Could Become Worth It**
+
+   6.1. There is a hard requirement to reconstruct exact historical state at any point in time.
+
+   6.2. Business workflows frequently need replay, correction, or retroactive policy application.
+
+   6.3. Current audit logs are insufficient for compliance, dispute resolution, or financial reconciliation, and stronger append-only records are required.
+
+   6.4. The team first gains experience on a lower-risk service or bounded context.
+
+   6.5. There is executive and operational buy-in for the added complexity, including tooling and on-call readiness.
+
+**Decision**
+
+7. **Recommended decision: do not adopt event sourcing for checkout now.**
+
+8. **Recommended architecture direction: transactional MySQL plus audit-log hardening plus transactional outbox.**
+
+9. **Recommended experiment: use event-style append-only records in a non-critical adjacent workflow first, such as notifications, fulfillment status history, or customer-service case history.**
+
+10. **Re-evaluation trigger: revisit in 6-12 months only if concrete requirements appear that MySQL plus audit logs plus outbox cannot satisfy cleanly.**
+
+## Phase 3: Claude's critique of Codex's report
+
+### Item: scaling-fit verdict
+Quoting the other agent: "`10K orders/day` is not a scale argument for event sourcing.  "
+Counter-evidence: Agreed. 10K orders/day produces an average of single-digit orders per second; this is comfortably inside a single-MySQL-primary regime, and event sourcing is not a throughput-oriented choice. The framing "not a scale argument" is the right one — scaling pressure is not the relevant axis here.
+[CONCEDE]
+
+### Item: ops surface from event sourcing
+Quoting the other agent: "Event sourcing adds new production failure modes.  "
+Counter-evidence: Agreed. The list that follows (event schema evolution, replay safety, projection rebuilds, poisoned events, duplicate processing, event ordering, snapshotting, stream compaction policy, operational tooling) is an accurate enumeration of the recurring ops cost. None of these surfaces exist in the current MySQL+audit-logs setup.
+[CONCEDE]
+
+### Item: zero prior experience as risk signal
+Quoting the other agent: "No prior event sourcing experience is a major risk signal.  "
+Counter-evidence: Agreed, and worth strengthening rather than disputing. Calling out that the hard parts are not "syntax or library choice" but "event modeling, versioning, transactional boundaries, idempotency, projections, replay discipline, and operational recovery" is correct: these are the silent first-project pitfalls that show up months later, when the cost to undo them is high.
+[CONCEDE]
+
+### Item: backfilled-history fidelity
+Quoting the other agent: "Backfilling historical events is often lossy.  "
+Counter-evidence: Agreed. A reconstructed event log derived from existing MySQL rows and audit logs is a synthesis, not real history; it will contain "synthetic events that look precise but are not", and downstream consumers can develop unjustified confidence in its fidelity. This argues that "replay-from-history" cutover patterns carry hidden epistemic risk on top of their engineering risk.
+[CONCEDE]
+
+### Item: outbox as the better near-term move
+Quoting the other agent: "Adopt the **transactional outbox pattern**, not full event sourcing.  "
+Counter-evidence: Agreed. Transactional outbox (with the canonical record still in MySQL, and integration events written in the same transaction) gives most of the realistic benefits — reliable downstream eventing, integration decoupling — with a small fraction of the complexity and migration risk. This matches the "outbox + CDC" path I argued for and is the right anchor for the "yes to events, no to event sourcing" position.
+[CONCEDE]
+
+### Item: pilot-on-adjacent-workflow recommendation
+Quoting the other agent: "9. **Recommended experiment: use event-style append-only records in a non-critical adjacent workflow first, such as notifications, fulfillment status history, or customer-service case history.**"
+Counter-evidence: Agreed in principle: building the team's first event-sourced service somewhere other than checkout is the correct sequencing. Two of the suggested candidates — fulfillment status history and customer-service case history — are good fits because they are naturally append-only. Notifications I'd flag as a weaker candidate, since most notifications systems are fire-and-forget and don't actually benefit from a replayable event log; a customer activity feed or audit timeline is a stronger pilot domain.
+[PUSH-BACK]
+
+### Item: re-evaluation trigger window
+Quoting the other agent: "10. **Re-evaluation trigger: revisit in 6-12 months only if concrete requirements appear that MySQL plus audit logs plus outbox cannot satisfy cleanly.**"
+Counter-evidence: 6 months is too short to re-evaluate. The trigger condition the prompt requires — that MySQL + audit logs + outbox demonstrably cannot satisfy a real requirement — needs the team to (a) actually ship and operate the outbox + audit-log hardening, (b) accumulate enough production data to know whether limits are real or speculative, and (c) ideally pilot one event-sourced service to gain operational experience first. That sequence does not realistically complete in 6 months. A 12–18 month horizon is more honest, and "only if a concrete requirement emerges" should be the gating condition rather than the calendar.
+[PUSH-BACK]
+
+### Item: payment intent as in-transaction concern
+Quoting the other agent: "It changes the write model to append-only events, but checkout still needs consistency around inventory, payment intent, order creation, idempotency, fraud checks, and fulfillment handoff."
+Counter-evidence: Agreed that consistency around these concerns survives any persistence model and that an append-only write model does not by itself solve the cross-aggregate consistency problem. Payment intent in particular interacts with an external PSP, so the local store choice is not the binding constraint there. This is a clean restatement of "event sourcing is not a substitute for designing your consistency boundaries", which is correct.
+[CONCEDE]
+
+### Item: support tooling as mandatory
+Quoting the other agent: "Support tooling becomes mandatory, not optional.  "
+Counter-evidence: Agreed. The five questions enumerated ("What happened to this order?", "Why is this projection wrong?", "Can this event be corrected?", "Can we replay safely?", "Which downstream systems observed which state?") are exactly the operator-facing questions an event-sourced checkout produces — and none of them are answered by default; each requires bespoke tooling. This is a real and chronically underestimated cost, and listing it as mandatory rather than nice-to-have is the right framing.
+[CONCEDE]
+
+### Item: rollback irreversibility
+Quoting the other agent: "Rollback is harder than with a conventional refactor.  "
+Counter-evidence: Agreed, and the underlying point — that downstream systems depending on event streams and projections make architectural rollback expensive — is the structural reason cutover is irreversible in practice once orders begin to live authoritatively in the event store. The same observation in different words appears in my own report; convergence on this is genuine.
+[CONCEDE]
+
+### Item: pilot-vs-checkout sequencing rule
+Quoting the other agent: "The learning curve is acceptable for a low-risk bounded context or new subsystem, but not as a first adoption directly inside checkout’s core write path."
+Counter-evidence: Agreed. This is the correct decision rule: the team should not learn event sourcing on a revenue-critical service. Pairing this rule with a concrete pilot recommendation (per item 9 in the report) makes the path actionable rather than just cautionary.
+[CONCEDE]

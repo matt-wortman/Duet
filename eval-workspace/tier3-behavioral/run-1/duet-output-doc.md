@@ -1,0 +1,195 @@
+# Duet: REST API pagination — cursor vs. offset
+
+**Outcome**: Resolved at Phase 3 (no disagreements found; Phase 4 skipped per F4.4)
+**Phases completed**: 1, 2, 3, 5 (Phase 4 skipped — empty Discrepancies)
+
+---
+
+## Phase 1: Approved Prompt
+
+Compare two design approaches for adding pagination to a hypothetical REST API: cursor-based vs. offset-based. Make 4–6 numbered claims. Recommend one with brief justification. No code; analysis only.
+
+<details>
+<summary>Q&A transcript (not seen by agents)</summary>
+
+(Phase 1 skipped — prompt pre-approved by test harness. No clarifying questions asked.)
+
+</details>
+
+---
+
+## Phase 2: Parallel Reports
+
+### Claude's Report
+
+# Cursor-based vs. Offset-based Pagination — Claude's Analysis
+
+## Numbered claims
+
+1. **Correctness under concurrent writes.** Offset-based pagination (`?limit=20&offset=40`) computes the page boundary from the current ordering of the underlying result set at request time. If rows are inserted, deleted, or reordered between page fetches, the client will see duplicates (a row shifts forward) or skipped rows (a row shifts backward). Cursor-based pagination encodes a positional anchor (typically the sort key of the last item seen) and asks the server for "rows after this anchor"; as long as the sort key is stable, concurrent writes outside the already-fetched window do not corrupt the client's view. For any dataset where writes can occur during pagination, cursor is meaningfully more correct.
+
+2. **Server-side performance at depth.** Offset pagination requires the database to scan and discard `offset` rows before returning `limit` rows; cost grows linearly (or worse) with how deep the client paginates. Most relational engines cannot index past an offset — they must walk it. Cursor pagination performs a range seek on the indexed sort key (`WHERE sort_key > :anchor ORDER BY sort_key LIMIT :n`), which is constant-cost per page regardless of depth. The performance gap is negligible for the first few pages and severe past page ~100 of a large table.
+
+3. **Client and tooling ergonomics.** Offset pagination is strictly easier for ad-hoc clients: page numbers map directly to UI controls ("page 5 of 47"), users can jump to arbitrary pages, and total counts are cheap to display. Cursor pagination forces sequential traversal — there is no natural "jump to page 17" — and total counts must be computed separately. For human-facing list UIs with random-access expectations (search results, admin tables), offset is the more familiar shape. For machine-to-machine consumption (sync jobs, infinite-scroll feeds, exports), cursors are the more natural shape.
+
+4. **Cursor opacity and API evolution.** A well-designed cursor is an opaque token (often base64-encoded server state: sort key + tie-breaker + maybe a sort-direction stamp). Opacity gives the server room to evolve the underlying ordering scheme — change the sort key, add a tie-breaker column, switch storage engines — without breaking clients, because clients only round-trip the token. Offset is a transparent integer with no abstraction barrier; any change to result ordering changes what `offset=40` means, and clients hard-code page math against the API's current behavior.
+
+5. **Stable-sort key requirement and tie-breaking.** Cursor pagination is only correct if the sort key is **unique** (or paired with a tie-breaker — usually a primary key). Two rows with the same `created_at` will land both on page boundaries inconsistently if the cursor encodes only `created_at`. This is a real footgun: cursors look easy, but a naive cursor on a non-unique sort column is silently wrong (rows get skipped at ties). Offset has no such requirement — it pages by ordinal position regardless of key uniqueness. So while cursor is the more correct choice in principle, it pushes a correctness obligation onto the API designer that offset does not.
+
+6. **Operational observability and abuse mitigation.** Offset pagination is trivially cacheable at the edge (the URL is a deterministic function of `(offset, limit)` for a given query). It is also easy to rate-limit and debug — log lines show "user X requested offset=10000," and that signal is meaningful. Cursor pagination is harder to cache (each cursor is one-shot and unique per session) and slightly harder to reason about in ops dashboards; on the other hand, deep-pagination abuse (`?offset=1000000`) is a known DoS vector against offset, and cursors structurally prevent it because there is no "deep" — every page is one seek.
+
+## Recommendation
+
+**Cursor-based pagination, for any API expected to scale or to be consumed programmatically.** The decisive factors are (2) — offset's performance collapses on deep pages of large tables, and that's a property of the storage engine, not something better hardware fixes — and (1) — silent duplicate/skip bugs under concurrent writes are the kind of correctness defect that erodes trust in an API and is essentially undetectable from logs.
+
+The two real costs of cursor — (3) loss of random page access and (5) the tie-breaker obligation — are addressable. (3) is a UX choice that for most modern list interfaces (infinite scroll, "load more") is no longer needed; when random access genuinely matters (admin paging through a fixed dataset), it can be offered as a separate query mode. (5) is a one-time API-design discipline: pair every sort key with the primary key as tie-breaker, and validate cursors server-side.
+
+If the API is exclusively human-facing with stable, slow-changing data (e.g., a documentation index, a small admin UI over a low-write table), offset is acceptable and simpler. Otherwise, default to cursor.
+
+### Codex's Report
+
+**Claims**
+
+1. **Offset pagination is simpler for clients and humans.**  
+   `page=3&limit=50` or `offset=100&limit=50` is easy to understand, debug, bookmark, and expose in admin-style UIs.
+
+2. **Cursor pagination is more stable under changing data.**  
+   If records are inserted or deleted while a client is paging, offset pagination can skip or duplicate items because positions shift. Cursor pagination anchors the next page to a specific record or sort position, so it behaves better on active datasets.
+
+3. **Offset pagination gets slower at large depths.**  
+   Databases often still need to scan or count past skipped rows before returning the requested slice. Cursor pagination can use indexed seek queries, making it better for large tables and infinite-scroll feeds.
+
+4. **Cursor pagination requires stricter ordering guarantees.**  
+   It needs a deterministic sort key, usually something like `created_at + id`, and opaque cursor tokens must be designed carefully. Offset pagination is more flexible when arbitrary sorting, jumping to page N, or total page counts are required.
+
+5. **Offset pagination is better when random access matters.**  
+   Reporting tools, search results, and back-office tables often need “go to page 12,” total counts, and stable-looking page numbers. Cursor pagination usually supports only forward/backward traversal, not direct jumps.
+
+6. **Cursor pagination is better for public, high-volume, mutable APIs.**  
+   It scales better, avoids many consistency problems, and matches common consumption patterns such as feeds, event streams, activity logs, and mobile infinite scrolling.
+
+**Recommendation**
+
+Use **cursor-based pagination** as the default for a modern REST API, especially if the data changes frequently or the dataset may grow large. It is more robust and performant over time. Use **offset-based pagination** only for smaller, mostly static collections or UIs that specifically need page numbers, total counts, and random page access.
+
+---
+
+## Phase 3: Merged Critique
+
+**Note on merge:** Both agents independently produced classification passes (full Codex pass at `codex-phase3-raw.txt`; full Claude pass at `claude-phase3-classification.md`). Both passes report **0 DISAGREED items**. They converge on every substantive claim and on the same recommendation. SINGLE-SOURCE items below are preserved as-is from each pass — the originating agent flagged them, and the other agent in their own classification pass marked them `accept`, so they are folded into Best of the Best with provenance noted.
+
+### Best of the Best (Agreed Findings)
+
+Verbatim quotes from each agent's Phase 2 report. Where one agent quoted a heading and the other a body sentence, both are included.
+
+- **Stability under concurrent writes**
+  - From Claude: "Cursor-based pagination encodes a positional anchor (typically the sort key of the last item seen) and asks the server for "rows after this anchor"; as long as the sort key is stable, concurrent writes outside the already-fetched window do not corrupt the client's view."
+  - From Codex: "If records are inserted or deleted while a client is paging, offset pagination can skip or duplicate items because positions shift. Cursor pagination anchors the next page to a specific record or sort position, so it behaves better on active datasets."
+
+- **Performance at depth**
+  - From Claude: "Cursor pagination performs a range seek on the indexed sort key (`WHERE sort_key > :anchor ORDER BY sort_key LIMIT :n`), which is constant-cost per page regardless of depth."
+  - From Codex: "Databases often still need to scan or count past skipped rows before returning the requested slice. Cursor pagination can use indexed seek queries, making it better for large tables and infinite-scroll feeds."
+
+- **Random-access UX favors offset**
+  - From Claude: "For human-facing list UIs with random-access expectations (search results, admin tables), offset is the more familiar shape."
+  - From Codex: "Reporting tools, search results, and back-office tables often need “go to page 12,” total counts, and stable-looking page numbers. Cursor pagination usually supports only forward/backward traversal, not direct jumps."
+
+- **Sort-key requirement for cursors**
+  - From Claude: "Cursor pagination is only correct if the sort key is **unique** (or paired with a tie-breaker — usually a primary key)."
+  - From Codex: "It needs a deterministic sort key, usually something like `created_at + id`, and opaque cursor tokens must be designed carefully."
+
+- **Default recommendation: cursor**
+  - From Claude: "**Cursor-based pagination, for any API expected to scale or to be consumed programmatically.**"
+  - From Codex: "Use **cursor-based pagination** as the default for a modern REST API, especially if the data changes frequently or the dataset may grow large."
+
+- **Offset acceptable for small/static cases**
+  - From Claude: "If the API is exclusively human-facing with stable, slow-changing data (e.g., a documentation index, a small admin UI over a low-write table), offset is acceptable and simpler."
+  - From Codex: "Use **offset-based pagination** only for smaller, mostly static collections or UIs that specifically need page numbers, total counts, and random page access."
+
+- **Cursor opacity and API evolution** *(SINGLE-SOURCE from Claude; Codex accepted in Phase 3 classification)*
+  - From Claude: "A well-designed cursor is an opaque token (often base64-encoded server state: sort key + tie-breaker + maybe a sort-direction stamp). Opacity gives the server room to evolve the underlying ordering scheme — change the sort key, add a tie-breaker column, switch storage engines — without breaking clients, because clients only round-trip the token."
+  - Codex's Phase 3 view (verbatim): "accept — Opaque cursor tokens are a real API-evolution benefit that my report only mentioned as a design requirement, not as a benefit."
+
+- **Operational observability and abuse mitigation** *(SINGLE-SOURCE from Claude; Codex accepted)*
+  - From Claude: "Offset pagination is trivially cacheable at the edge (the URL is a deterministic function of `(offset, limit)` for a given query). ... deep-pagination abuse (`?offset=1000000`) is a known DoS vector against offset, and cursors structurally prevent it because there is no "deep" — every page is one seek."
+  - Codex's Phase 3 view (verbatim): "accept — The cacheability, debugging, and deep-offset abuse points are valid operational tradeoffs not covered in my report."
+
+- **Simplicity for clients and humans** *(SINGLE-SOURCE from Codex; Claude accepted in Phase 3 classification)*
+  - From Codex: "**Offset pagination is simpler for clients and humans.** `page=3&limit=50` or `offset=100&limit=50` is easy to understand, debug, bookmark, and expose in admin-style UIs."
+  - Claude's Phase 3 view (verbatim): "accept — the other report covered ergonomics for human UIs but did not specifically call out URL bookmarkability and debuggability, which are concrete and correct properties of offset."
+
+- **Flexibility for arbitrary sorting** *(SINGLE-SOURCE from Codex; Claude accepted)*
+  - From Codex: "Offset pagination is more flexible when arbitrary sorting, jumping to page N, or total page counts are required."
+  - Claude's Phase 3 view (verbatim): "accept — orthogonal to the random-access claim and worth keeping; the other report did not surface "arbitrary sorting" as a separate offset advantage."
+
+### Discrepancies
+
+#### Subsection 1: Claude found, Codex disagrees
+
+*(empty — Codex's Phase 3 classification reported 0 DISAGREED items; Claude's Phase 3 classification reported 0 DISAGREED items)*
+
+#### Subsection 2: Codex found, Claude disagrees
+
+*(empty — same as above)*
+
+---
+
+## Phase 4: Negotiation Log
+
+**Skipped.** Per the skill's design (and the test harness's F4.4 instruction: "If both Discrepancies subsections are empty after Phase 3, log that and skip to Phase 5"), no rounds were run. Both Phase 3 classification passes returned empty DISAGREED sections, so there were no items to negotiate.
+
+| Round | Items advanced | Items conceded | Items remaining open |
+|-------|----------------|----------------|----------------------|
+| —     | 0              | 0              | 0                    |
+
+**Test-imposed cap reminder:** the harness instructed a Round-3 hard cap, but no rounds were run, so the cap did not bind.
+
+**Protocol gap captured (F4.1) — not triggered live this run:** Because DISAGREED was empty, the orchestrator never had to convert Phase 3 prompt output (`Your position / Other's position` two-quote dump, no tag) into the merged-doc Round-1 shape (`**Codex (Round 1):** "..." [PUSH-BACK]`). If even one DISAGREED item had appeared, the orchestrator would have had to either (a) author a `[PUSH-BACK]` tag the agent did not produce (banned by SKILL.md:297 by symmetry with "Inferred concessions are forbidden"), (b) paraphrase the position into critique form (banned by SKILL.md:145 "Never paraphrase agent output"), or (c) deviate from the documented Round-1 layout and publish the verbatim two-quote DISAGREED block instead. See `claude-subagent.log` for the full deviation reasoning.
+
+---
+
+## Phase 5: Fact-Check
+
+### Claude's verdict
+
+## Fact-check result
+PASS
+
+## Issues (if any)
+
+None. I verified each Best of the Best entry credited to me against my Phase 2 report:
+
+- "Stability under concurrent writes" — Claude quote at doc line 86 is verbatim from Phase 2 claim 1.
+- "Performance at depth" — Claude quote at doc line 90 is verbatim from Phase 2 claim 2.
+- "Random-access UX favors offset" — Claude quote at doc line 94 is verbatim from Phase 2 claim 3.
+- "Sort-key requirement for cursors" — Claude quote at doc line 98 is verbatim from Phase 2 claim 5.
+- "Default recommendation: cursor" — Claude quote at doc line 102 is verbatim from the Phase 2 Recommendation.
+- "Offset acceptable for small/static cases" — Claude quote at doc line 106 is verbatim from the Phase 2 Recommendation.
+- "Cursor opacity and API evolution" (SINGLE-SOURCE from me) — Claude quote at doc line 110 is verbatim from Phase 2 claim 4.
+- "Operational observability and abuse mitigation" (SINGLE-SOURCE from me) — Claude quote at doc line 114 is the verbatim opening sentence + verbatim closing portion of Phase 2 claim 6, with an ellipsis between them. The ellipsis truncates the middle of the claim ("Cursor pagination is harder to cache (each cursor is one-shot and unique per session) and slightly harder to reason about in ops dashboards; on the other hand,") — not a misrepresentation of position, but worth noting as a non-strictly-verbatim shortening. I accept the shortened form because the included segments accurately capture the operational tradeoff and the omitted middle is the second-half-of-tradeoff being caveated.
+
+Discrepancies section is empty for both subsections — no rounds were run, so there are no round attributions to verify.
+
+I have no positions in the residual Discrepancies section (it is empty), so the "quietly softened or dropped" check is vacuous. Single-source items I raised are folded into Best of the Best with my full quoted positions and Codex's verbatim acceptance — no softening.
+
+### Codex's verdict
+
+## Fact-check result
+PASS
+
+## Issues (if any)
+None.
+
+### Corrections applied
+
+None — both verdicts are PASS.
+
+---
+
+## Final Summary
+
+**Agreed findings**: 10 (6 multi-source + 4 single-source items both agents accepted in Phase 3 classification)
+**Permanent dissents**: 0
+
+The two agents converged on every substantive point in Phase 2 already; Phase 3 surfaced only single-source elaborations, each of which the other agent accepted. No negotiation was required. Both agents' Phase 5 fact-checks returned PASS with no issues.
+

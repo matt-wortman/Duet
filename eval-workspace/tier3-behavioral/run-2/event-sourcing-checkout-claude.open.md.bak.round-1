@@ -1,0 +1,54 @@
+# Working file: open items in event-sourcing-checkout-claude.md
+
+> Updated after each Phase 4 round. Rebuild from canonical file if lost.
+> Most recent round: Phase 3.
+
+---
+
+### Open items (after Phase 3)
+
+### Item: Scaling threshold
+Quoting the other agent: "No — not now, and probably not at this scale."
+Counter-evidence: I agree with "not now," but I would not anchor the rejection on "probably not at this scale." Event sourcing is not made appropriate by volume alone; it can be appropriate at low volume if the domain needs exact temporal reconstruction, replay-based correction, or immutable business-fact history. The stronger argument is that the stated requirements do not justify the complexity, not that 10K orders/day is categorically the wrong scale.
+[PUSH-BACK]
+
+### Item: Peak estimate
+Quoting the other agent: "a peak of perhaps 5–20 orders/second on a busy hour"
+Counter-evidence: The direction is plausible, but the numeric peak range is an unsupported assumption. Checkout traffic can be spiky around campaigns, drops, holidays, or outages/retries, so the decision should use measured p95/p99 checkout write load and lock contention rather than a guessed peak. This does not change the recommendation, but the evidence should be framed as "likely manageable" unless real telemetry confirms it.
+[PUSH-BACK]
+
+### Item: Read amplification
+Quoting the other agent: "Read amplification can hurt at small scale."
+Counter-evidence: I partially disagree with this framing. For checkout orders, aggregate event counts are usually small enough that replaying a single order is not the central risk; the larger practical cost is operating projections, handling projection lag, rebuilding read models, and teaching support/debugging workflows to reason from events plus projection code. The critique is valid, but "read amplification" is not the sharpest objection here.
+[PUSH-BACK]
+
+### Item: Strong consistency
+Quoting the other agent: "With a transactional MySQL system you currently have strong consistency for free."
+Counter-evidence: This is too broad. MySQL gives strong transactional consistency for data inside its transaction boundary, but checkout already crosses external systems such as payment processors, inventory reservations, tax, fraud, and fulfillment, where consistency is not "free." The more precise point is that replacing the current MySQL write model would add new eventual-consistency surfaces on top of an already distributed workflow.
+[PUSH-BACK]
+
+### Item: Audit sufficiency
+Quoting the other agent: "The marginal audit benefit of going event-sourced is small."
+Counter-evidence: This is plausible but overstated from the given facts. We only know the system has audit logs, not whether they capture actor, reason, request ID, before/after values, immutable append-only guarantees, payment identifiers, or exact business facts. The safer claim is that audit goals should first be met by hardening the existing audit log and adding targeted append-only records; full event sourcing may still add audit value if current logs are weak, but that alone does not justify migrating checkout.
+[PUSH-BACK]
+
+### Item: Dual-write migration
+Quoting the other agent: "new event-sourced subsystem runs in parallel with MySQL, both writing on every checkout, with reconciliation."
+Counter-evidence: I agree that naive dual-write is dangerous, but the description should distinguish it from safer migration patterns. A transactional outbox, CDC stream, or shadow projection can avoid independent writes to two authoritative stores while still producing events for comparison. The migration risk remains high, but "both writing on every checkout" is specifically the pattern to avoid, not the only strangler-style option.
+[PUSH-BACK]
+
+### Item: Cutover reversibility
+Quoting the other agent: "Cutover is irreversible in practice."
+Counter-evidence: I partially disagree with the absoluteness. Cutover is expensive and rollback must be designed upfront, but it is not inherently irreversible if the system continues producing a canonical outbox/CDC feed, keeps MySQL-compatible projections, and has a tested reverse-sync/rollback window. The practical point stands: rollback is much harder than with a conventional refactor.
+[PUSH-BACK]
+
+### Item: Domain complexity
+Quoting the other agent: "10K orders/day with audit logs implies a fairly conventional checkout; nothing in the prompt suggests modeling difficulty that event sourcing would untangle."
+Counter-evidence: I agree with the conclusion but not the inference from volume and audit logs. A checkout can be domain-complex at low volume, and audit logs do not prove the workflow is conventional. The better evidence is simply that the prompt does not state temporal workflow, replay, compensation, or reconciliation requirements that event sourcing would uniquely clarify.
+[PUSH-BACK]
+
+### Item: Reassessment timing
+Quoting the other agent: "Reassess in 12–18 months"
+Counter-evidence: I partially disagree on the specificity. A time-based reassessment is useful, but the stronger trigger is requirements-based: revisit when there are concrete audit/replay/temporal requirements or measured limits that MySQL plus audit logs plus outbox cannot satisfy cleanly. Without that, 12–18 months may just reopen an architectural debate without new evidence.
+[PUSH-BACK]
+

@@ -1,0 +1,20 @@
+# Working file: open items in event-sourcing-checkout-claude.md
+
+> Updated after each Phase 4 round. Rebuild from canonical file if lost.
+> Most recent round: 2.
+
+---
+
+### Open items (after Round 2)
+
+#### Item: Cutover reversibility
+
+**Phase 3 — Codex critique** (verbatim from canonical):
+Quoting the other agent: "Cutover is irreversible in practice."
+Counter-evidence: I partially disagree with the absoluteness. Cutover is expensive and rollback must be designed upfront, but it is not inherently irreversible if the system continues producing a canonical outbox/CDC feed, keeps MySQL-compatible projections, and has a tested reverse-sync/rollback window. The practical point stands: rollback is much harder than with a conventional refactor.
+[PUSH-BACK]
+
+**Round 2 — Claude response** (verbatim from canonical):
+Quoting Codex: "it is not inherently irreversible if the system continues producing a canonical outbox/CDC feed, keeps MySQL-compatible projections, and has a tested reverse-sync/rollback window"
+Response: Partially agreed. "Irreversible in practice" was meant operationally — once an event-sourced store is the authoritative origin of new orders, the cost of reverting is dominated by the engineering required to round-trip event-shape state back into a row-shape canonical store, which most teams discover too late to do cleanly. The mitigation Codex describes — keep producing MySQL-compatible projections, design and *test* a reverse-sync window upfront — is the right way to make it reversible, but it has to be a deliberate, sustained engineering investment from day one, and at this team's experience level the realistic risk is that the rollback path is designed but never actually exercised. So I'll soften the claim from "irreversible" to "irreversible by default — only reversible with deliberate, tested upfront design", but keep the warning teeth on it.
+[PUSH-BACK]

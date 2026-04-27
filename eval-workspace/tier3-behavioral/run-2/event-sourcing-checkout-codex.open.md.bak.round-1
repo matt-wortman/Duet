@@ -1,0 +1,19 @@
+# Working file: open items in event-sourcing-checkout-codex.md
+
+> Updated after each Phase 4 round. Rebuild from canonical file if lost.
+> Most recent round: Phase 3.
+
+---
+
+### Open items (after Phase 3)
+
+### Item: pilot-on-adjacent-workflow recommendation
+Quoting the other agent: "9. **Recommended experiment: use event-style append-only records in a non-critical adjacent workflow first, such as notifications, fulfillment status history, or customer-service case history.**"
+Counter-evidence: Agreed in principle: building the team's first event-sourced service somewhere other than checkout is the correct sequencing. Two of the suggested candidates — fulfillment status history and customer-service case history — are good fits because they are naturally append-only. Notifications I'd flag as a weaker candidate, since most notifications systems are fire-and-forget and don't actually benefit from a replayable event log; a customer activity feed or audit timeline is a stronger pilot domain.
+[PUSH-BACK]
+
+### Item: re-evaluation trigger window
+Quoting the other agent: "10. **Re-evaluation trigger: revisit in 6-12 months only if concrete requirements appear that MySQL plus audit logs plus outbox cannot satisfy cleanly.**"
+Counter-evidence: 6 months is too short to re-evaluate. The trigger condition the prompt requires — that MySQL + audit logs + outbox demonstrably cannot satisfy a real requirement — needs the team to (a) actually ship and operate the outbox + audit-log hardening, (b) accumulate enough production data to know whether limits are real or speculative, and (c) ideally pilot one event-sourced service to gain operational experience first. That sequence does not realistically complete in 6 months. A 12–18 month horizon is more honest, and "only if a concrete requirement emerges" should be the gating condition rather than the calendar.
+[PUSH-BACK]
+

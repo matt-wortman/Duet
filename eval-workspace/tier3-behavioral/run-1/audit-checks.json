@@ -1,0 +1,61 @@
+{
+  "doc_path": "/home/matt/.claude/skills/duet-eval-workspace/tier3-behavioral/run-1/duet-output-doc.md",
+  "doc_present": true,
+  "doc_size_bytes": 17407,
+  "checks": [
+    {
+      "name": "verbatim_quotes",
+      "quotes_checked": 0,
+      "non_substring_matches": [],
+      "pass": true
+    },
+    {
+      "name": "tag_presence",
+      "total_round_bullets": 0,
+      "missing_tag": [],
+      "pass": false
+    },
+    {
+      "name": "round_consecutive",
+      "items_checked": 0,
+      "gaps": [],
+      "pass": true
+    },
+    {
+      "name": "concession_promotion",
+      "conceded_items": [],
+      "not_in_best_of_best": [],
+      "pass": true
+    },
+    {
+      "name": "snapshot_files",
+      "max_round_in_doc": 0,
+      "expected_snapshots": [],
+      "present": [
+        "duet-output-doc.md.bak.round-0"
+      ],
+      "missing": [],
+      "pass": false
+    },
+    {
+      "name": "phase5_verdicts",
+      "phase5_present": true,
+      "claude_verdict_present": true,
+      "codex_verdict_present": false,
+      "pass": false
+    }
+  ],
+  "summary": {
+    "passed": [
+      "verbatim_quotes",
+      "round_consecutive",
+      "concession_promotion"
+    ],
+    "failed": [
+      "tag_presence",
+      "snapshot_files",
+      "phase5_verdicts"
+    ],
+    "all_pass": false
+  }
+}

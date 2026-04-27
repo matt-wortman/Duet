@@ -1,0 +1,75 @@
+You are reviewing both Phase 2 reports from a /duet session — your own report and the other agent's. Your job is to classify each finding into one of three categories.
+
+=== YOUR PHASE 2 REPORT ===
+**Claims**
+
+1. **Offset pagination is simpler for clients and humans.**
+   `page=3&limit=50` or `offset=100&limit=50` is easy to understand, debug, bookmark, and expose in admin-style UIs.
+
+2. **Cursor pagination is more stable under changing data.**
+   If records are inserted or deleted while a client is paging, offset pagination can skip or duplicate items because positions shift. Cursor pagination anchors the next page to a specific record or sort position, so it behaves better on active datasets.
+
+3. **Offset pagination gets slower at large depths.**
+   Databases often still need to scan or count past skipped rows before returning the requested slice. Cursor pagination can use indexed seek queries, making it better for large tables and infinite-scroll feeds.
+
+4. **Cursor pagination requires stricter ordering guarantees.**
+   It needs a deterministic sort key, usually something like `created_at + id`, and opaque cursor tokens must be designed carefully. Offset pagination is more flexible when arbitrary sorting, jumping to page N, or total page counts are required.
+
+5. **Offset pagination is better when random access matters.**
+   Reporting tools, search results, and back-office tables often need "go to page 12," total counts, and stable-looking page numbers. Cursor pagination usually supports only forward/backward traversal, not direct jumps.
+
+6. **Cursor pagination is better for public, high-volume, mutable APIs.**
+   It scales better, avoids many consistency problems, and matches common consumption patterns such as feeds, event streams, activity logs, and mobile infinite scrolling.
+
+**Recommendation**
+
+Use **cursor-based pagination** as the default for a modern REST API, especially if the data changes frequently or the dataset may grow large. It is more robust and performant over time. Use **offset-based pagination** only for smaller, mostly static collections or UIs that specifically need page numbers, total counts, and random page access.
+=== END YOUR REPORT ===
+
+=== OTHER AGENT'S PHASE 2 REPORT ===
+# Cursor-based vs. Offset-based Pagination — Claude's Analysis
+
+## Numbered claims
+
+1. **Correctness under concurrent writes.** Offset-based pagination (`?limit=20&offset=40`) computes the page boundary from the current ordering of the underlying result set at request time. If rows are inserted, deleted, or reordered between page fetches, the client will see duplicates (a row shifts forward) or skipped rows (a row shifts backward). Cursor-based pagination encodes a positional anchor (typically the sort key of the last item seen) and asks the server for "rows after this anchor"; as long as the sort key is stable, concurrent writes outside the already-fetched window do not corrupt the client's view. For any dataset where writes can occur during pagination, cursor is meaningfully more correct.
+
+2. **Server-side performance at depth.** Offset pagination requires the database to scan and discard `offset` rows before returning `limit` rows; cost grows linearly (or worse) with how deep the client paginates. Most relational engines cannot index past an offset — they must walk it. Cursor pagination performs a range seek on the indexed sort key (`WHERE sort_key > :anchor ORDER BY sort_key LIMIT :n`), which is constant-cost per page regardless of depth. The performance gap is negligible for the first few pages and severe past page ~100 of a large table.
+
+3. **Client and tooling ergonomics.** Offset pagination is strictly easier for ad-hoc clients: page numbers map directly to UI controls ("page 5 of 47"), users can jump to arbitrary pages, and total counts are cheap to display. Cursor pagination forces sequential traversal — there is no natural "jump to page 17" — and total counts must be computed separately. For human-facing list UIs with random-access expectations (search results, admin tables), offset is the more familiar shape. For machine-to-machine consumption (sync jobs, infinite-scroll feeds, exports), cursors are the more natural shape.
+
+4. **Cursor opacity and API evolution.** A well-designed cursor is an opaque token (often base64-encoded server state: sort key + tie-breaker + maybe a sort-direction stamp). Opacity gives the server room to evolve the underlying ordering scheme — change the sort key, add a tie-breaker column, switch storage engines — without breaking clients, because clients only round-trip the token. Offset is a transparent integer with no abstraction barrier; any change to result ordering changes what `offset=40` means, and clients hard-code page math against the API's current behavior.
+
+5. **Stable-sort key requirement and tie-breaking.** Cursor pagination is only correct if the sort key is **unique** (or paired with a tie-breaker — usually a primary key). Two rows with the same `created_at` will land both on page boundaries inconsistently if the cursor encodes only `created_at`. This is a real footgun: cursors look easy, but a naive cursor on a non-unique sort column is silently wrong (rows get skipped at ties). Offset has no such requirement — it pages by ordinal position regardless of key uniqueness. So while cursor is the more correct choice in principle, it pushes a correctness obligation onto the API designer that offset does not.
+
+6. **Operational observability and abuse mitigation.** Offset pagination is trivially cacheable at the edge (the URL is a deterministic function of `(offset, limit)` for a given query). It is also easy to rate-limit and debug — log lines show "user X requested offset=10000," and that signal is meaningful. Cursor pagination is harder to cache (each cursor is one-shot and unique per session) and slightly harder to reason about in ops dashboards; on the other hand, deep-pagination abuse (`?offset=1000000`) is a known DoS vector against offset, and cursors structurally prevent it because there is no "deep" — every page is one seek.
+
+## Recommendation
+
+**Cursor-based pagination, for any API expected to scale or to be consumed programmatically.** The decisive factors are (2) — offset's performance collapses on deep pages of large tables, and that's a property of the storage engine, not something better hardware fixes — and (1) — silent duplicate/skip bugs under concurrent writes are the kind of correctness defect that erodes trust in an API and is essentially undetectable from logs.
+
+The two real costs of cursor — (3) loss of random page access and (5) the tie-breaker obligation — are addressable. (3) is a UX choice that for most modern list interfaces (infinite scroll, "load more") is no longer needed; when random access genuinely matters (admin paging through a fixed dataset), it can be offered as a separate query mode. (5) is a one-time API-design discipline: pair every sort key with the primary key as tie-breaker, and validate cursors server-side.
+
+If the API is exclusively human-facing with stable, slow-changing data (e.g., a documentation index, a small admin UI over a low-write table), offset is acceptable and simpler. Otherwise, default to cursor.
+=== END OTHER REPORT ===
+
+For every distinct finding, claim, or recommendation across both reports, classify it:
+
+- **AGREED** — both reports reached this independently. Quote the supporting passage from each report.
+- **DISAGREED** — both reports addressed this point but reached different conclusions. Quote both positions.
+- **SINGLE-SOURCE** — only one report covered this. Note which agent. Briefly state your view: do you accept it, dispute it, or want to defer?
+
+Output format (use exactly this structure):
+
+## AGREED
+- **{topic, one noun phrase}**: {quote from your report} / {quote from other report}
+
+## DISAGREED
+- **{topic, one noun phrase}**:
+  - Your position: {verbatim from your report}
+  - Other's position: {verbatim from other report}
+
+## SINGLE-SOURCE
+- **{topic, one noun phrase}** (from {your_report | other_report}): {quote}
+  - Your view: {accept | dispute | defer} — {one-sentence rationale}
+
+Quote VERBATIM. Do not paraphrase. Use one-noun-phrase topic labels — no framing.

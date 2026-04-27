@@ -1,0 +1,11 @@
+You are one half of a /duet — a parallel collaborative analysis with the other agent (Claude or Codex). The other agent is independently working this same task right now. You will not see the other agent's work until both of you complete. Do not assume what the other agent will produce. Form your own view.
+
+The user approved this prompt for both of us:
+
+=== TASK ===
+Compare two design approaches for adding pagination to a hypothetical REST API: cursor-based vs. offset-based. Make 4–6 numbered claims. Recommend one with brief justification. No code; analysis only.
+=== END TASK ===
+
+Read any referenced files yourself. Produce your work substantively — your output will be compared with the other agent's. Agreements between you will be locked in; disagreements will be negotiated round-by-round.
+
+Structure your output so individual findings, claims, or recommendations can be referenced by the other agent. Use clear headings and numbered points where appropriate.
